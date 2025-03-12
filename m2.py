@@ -1,12 +1,13 @@
 import numpy as np
 import matplotlib.pyplot as plt
+from math import sqrt
 
 
 def pid_controller(error, q1, q2, q3, prev_error, integral, dt):
     integral += error * dt
     derivative = (error - prev_error) / dt
     output = q1 * error + q2 * integral + q3 * derivative
-    return output, integral
+    return output, integral, derivative
 
 
 def runge_kutta_step(y, z2, control_signal, T, eps, dt, k):
@@ -36,7 +37,7 @@ def simulate_system(
     q3=0,
     T=1,
     eps=0.75,
-    delay=0.1,
+    delay=0.0,
     time_end=20,
     dt=0.001,
     k=1,
@@ -46,6 +47,7 @@ def simulate_system(
 ):
     t = np.arange(0, time_end, dt)
     h = np.zeros_like(t)
+    dI_dq1, dI_dq2, dI_dq3 = 0, 0, 0
     h_ksi1 = np.zeros_like(t)
     h_ksi2 = np.zeros_like(t)
     h_ksi3 = np.zeros_like(t)
@@ -68,7 +70,7 @@ def simulate_system(
     ksi3, ksi3_i, prev_ksi3, z23 = 0, 0, 0, 0
     for i in range(1, len(t)):
         error = 1 - h[i - 1]
-        control_signal, integral = pid_controller(
+        control_signal, integral, derivative = pid_controller(
             error, q1, q2, q3, prev_error, integral, dt
         )
         I_x += error * error * dt
@@ -87,12 +89,14 @@ def simulate_system(
 
         ksi3_i += ksi3 * dt
         ksi3_d = (ksi3 - prev_ksi3) / dt
-        du_dq3 = ((error - prev_error) / dt) - q1 * ksi3 - q2 * ksi3_i - q3 * ksi3_d
+        du_dq3 = derivative - q1 * ksi3 - q2 * ksi3_i - q3 * ksi3_d
         prev_ksi3 = ksi3
         ksi3, z23 = runge_kutta_step(ksi3, z23, du_dq3, T, eps, dt, k)
-        prev_error = error
         y, z2 = runge_kutta_step(y, z2, control_signal, T, eps, dt, k)
-
+        dI_dq1 -= 2 * error * ksi1 * dt
+        dI_dq2 -= 2 * error * ksi2 * dt
+        dI_dq3 -= 2 * error * ksi3 * dt
+        prev_error = error
         if show_delay:
             h_nd[i] = y
             h_ksi1_nd[i] = ksi1
@@ -164,25 +168,76 @@ def simulate_system(
         plt.legend()
         plt.grid()
         plt.show()
-    return I_x
+    return dI_dq1, dI_dq2, dI_dq3, I_x
 
 
-def clalc_q():
-    q = [1.2, 0, 0]
-    step = 0.1
-    for i in [0, 1, 2]:
-        print(i)
-        prev_I = simulate_system(q1=q[0], q2=q[1], q3=q[2])
-        I = simulate_system(q1=q[0] + step, q2=q[1], q3=q[2])
-        q[i] += 2 * step
-        print(prev_I)
-        print(I)
-        while prev_I > I:
-            prev_I = I
-            I = simulate_system(q1=q[0], q2=q[1], q3=q[2])
-            q[i] += step
-    print(q)
+q1 = 1
+q2 = 0
+q3 = 0
+h = 0.1
+prev_I = 0
+I_x = 0
+
+iters = 500
+A = np.zeros((iters, 3))
+prev_sum = 10000000
+for i in range(0, iters):
+    prev_I = I_x
+    dI_dq1, dI_dq2, dI_dq3, I_x = simulate_system(
+        q1=q1, q2=q2, q3=q3, dt=0.01, delay=0.1
+    )
+    sum_i = np.sqrt(dI_dq1 * dI_dq1 + dI_dq2 * dI_dq2 + dI_dq3 * dI_dq3)
+    if prev_I > I_x:
+        h *= 1.1
+    else:
+        h /= 2
+    if sum_i > prev_sum:
+        break
+    prev_sum = sum_i
+    # if i > 0:
+    #     dI_dq1 = A[i - 1][0] + dI_dq1
+    #     dI_dq2 = A[i - 1][1] + dI_dq2
+    #     dI_dq3 = A[i - 1][2] + dI_dq3
+    q1 -= h * dI_dq1 / sum_i
+    q2 -= h * dI_dq2 / sum_i
+    q3 -= h * dI_dq3 / sum_i
+    A[i] = [dI_dq1, dI_dq2, dI_dq3]
+    print([i, dI_dq1, dI_dq2, dI_dq3, I_x, sum_i])
+print(q1, q2, q3)
+simulate_system(q1=q1, q2=q2, q3=q3, show=True, show_ksi=True)
+plt.plot(range(0, iters), [i[0] for i in A], label="dI_dq1")
+plt.plot(range(0, iters), [i[1] for i in A], label="dI_dq2")
+plt.plot(range(0, iters), [i[2] for i in A], label="dI_dq3")
+plt.xlabel("Время (с)")
+plt.ylabel("Выходное значение")
+plt.title("Переходная характеристика системы")
+plt.legend()
+plt.grid()
+plt.show()
+# def calc_q():
+#     q = [1, 0, 0]
+#     step = 0.1
+#     for i in [0, 1, 2]:
+#     print(i)
+#     prev_I = simulate_system(q1=q[0], q2=q[1], q3=q[2])
+#     I = simulate_system(q1=q[0] + step, q2=q[1], q3=q[2])
+#     q[i] += 2 * step
+#     print(prev_I)
+#     print(I)
+#     while prev_I > I:
+#         prev_I = I
+#         I = simulate_system(q1=q[0], q2=q[1], q3=q[2])
+#         q[i] += step
+#     print(q)
 
 
 # simulate_system(q1=3, q2=0, q3=5, show=True, show_delay=False)
-simulate_system(q1=6.5, q2=2, q3=2, show=False, show_delay=True, show_ksi=True)
+# simulate_system(q1=7.5, q2=5, q3=5, show=True, show_delay=False, show_ksi=True)
+# simulate_system(
+#     q1=6.245750667887806,
+#     q2=4.949854604335281,
+#     q3=12.288074270087355,
+#     show=True,
+#     show_delay=False,
+#     show_ksi=False,
+# )
