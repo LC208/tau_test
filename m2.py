@@ -45,6 +45,7 @@ def simulate_system(
     show_delay=False,
     show_ksi=False,
 ):
+
     t = np.arange(0, time_end, dt)
     h = np.zeros_like(t)
     dI_dq1, dI_dq2, dI_dq3 = 0, 0, 0
@@ -57,7 +58,8 @@ def simulate_system(
         h_ksi2_nd = np.zeros_like(t)
         h_ksi3_nd = np.zeros_like(t)
 
-    y, z2, I_x = 0, 0, 0
+    y, z2, I_x, I_xp = 0, 0, 0, 0
+    y_et = 0
     prev_error, integral = 0, 0
     delay_steps = int(delay / dt)
     buffer = np.zeros(delay_steps) if delay_steps > 0 else None
@@ -73,8 +75,9 @@ def simulate_system(
         control_signal, integral, derivative = pid_controller(
             error, q1, q2, q3, prev_error, integral, dt
         )
-        I_x += error * error * dt
-
+        I_xp = I_x
+        I_x += ((y - y_et) ** 2) * dt
+        y_et = apz_runge_kutta(y_et, 1, 1 / 3, 1, dt)
         ksi1_i += ksi1 * dt
         ksi1_d = (ksi1 - prev_ksi1) / dt
         du_dq1 = error - q1 * ksi1 - q2 * ksi1_i - q3 * ksi1_d
@@ -93,9 +96,9 @@ def simulate_system(
         prev_ksi3 = ksi3
         ksi3, z23 = runge_kutta_step(ksi3, z23, du_dq3, T, eps, dt, k)
         y, z2 = runge_kutta_step(y, z2, control_signal, T, eps, dt, k)
-        dI_dq1 -= 2 * error * ksi1 * dt
-        dI_dq2 -= 2 * error * ksi2 * dt
-        dI_dq3 -= 2 * error * ksi3 * dt
+        dI_dq1 -= ((I_x - I_xp) / dt) * ksi1 * dt
+        dI_dq2 -= ((I_x - I_xp) / dt) * ksi2 * dt
+        dI_dq3 -= ((I_x - I_xp) / dt) * ksi3 * dt
         prev_error = error
         if show_delay:
             h_nd[i] = y
@@ -171,14 +174,50 @@ def simulate_system(
     return dI_dq1, dI_dq2, dI_dq3, I_x
 
 
-q1 = 1
+def apz_runge_kutta(y, g, T, K, dt):
+    def f(y, g):
+        return (K * g - y) / T
+
+    k1 = dt * f(y, g)
+    k2 = dt * f(y + k1 / 2, g)
+    k3 = dt * f(y + k2 / 2, g)
+    k4 = dt * f(y + k3, g)
+
+    y = y + (k1 + 2 * k2 + 2 * k3 + k4) / 6
+
+    return y
+
+
+# T = 1.0
+# K = 1.0
+# g = 1.0
+# t_end = 10
+# dt = 0.1
+
+# t_values = np.arange(0, t_end, dt)
+# y_values = np.zeros_like(t_values)
+
+# for i in range(1, len(t_values)):
+#     y = y_values[i - 1]
+#     y_values[i] = apz_runge_kutta(y, g, T, K)
+
+# plt.plot(t_values, y_values, label="Выходная характеристика")
+# plt.xlabel("Время, с")
+# plt.ylabel("Выход y")
+# plt.title("Апериодическое звено первого порядка (метод Рунге-Кутты)")
+# plt.legend()
+# plt.grid()
+# plt.show()
+
+
+q1 = 0
 q2 = 0
 q3 = 0
-h = 0.1
+h = 0.3
 prev_I = 0
 I_x = 0
 
-iters = 500
+iters = 50
 A = np.zeros((iters, 3))
 prev_sum = 10000000
 for i in range(0, iters):
@@ -191,8 +230,8 @@ for i in range(0, iters):
         h *= 1.1
     else:
         h /= 2
-    if sum_i > prev_sum:
-        break
+    # if sum_i > prev_sum:
+    #     break
     prev_sum = sum_i
     # if i > 0:
     #     dI_dq1 = A[i - 1][0] + dI_dq1
@@ -231,8 +270,10 @@ plt.show()
 #     print(q)
 
 
-# simulate_system(q1=3, q2=0, q3=5, show=True, show_delay=False)
-# simulate_system(q1=7.5, q2=5, q3=5, show=True, show_delay=False, show_ksi=True)
+# simulate_system(q1=1, q2=0, q3=0, show=True, show_delay=False, delay=0.1)
+# simulate_system(
+#     q1=7.5, q2=5, q3=5, show=True, show_delay=False, show_ksi=True, delay=0.1
+# )
 # simulate_system(
 #     q1=6.245750667887806,
 #     q2=4.949854604335281,
@@ -240,4 +281,5 @@ plt.show()
 #     show=True,
 #     show_delay=False,
 #     show_ksi=False,
+#     delay=0.1,
 # )
