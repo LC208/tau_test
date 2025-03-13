@@ -58,7 +58,7 @@ def simulate_system(
         h_ksi2_nd = np.zeros_like(t)
         h_ksi3_nd = np.zeros_like(t)
 
-    y, z2, I_x, I_xp = 0, 0, 0, 0
+    y, z2, I_x = 0, 0, 0
     y_et = 0
     prev_error, integral = 0, 0
     delay_steps = int(delay / dt)
@@ -75,7 +75,6 @@ def simulate_system(
         control_signal, integral, derivative = pid_controller(
             error, q1, q2, q3, prev_error, integral, dt
         )
-        I_xp = I_x
         I_x += ((y - y_et) ** 2) * dt
         y_et = apz_runge_kutta(y_et, 1, 1 / 3, 1, dt)
         ksi1_i += ksi1 * dt
@@ -96,9 +95,9 @@ def simulate_system(
         prev_ksi3 = ksi3
         ksi3, z23 = runge_kutta_step(ksi3, z23, du_dq3, T, eps, dt, k)
         y, z2 = runge_kutta_step(y, z2, control_signal, T, eps, dt, k)
-        dI_dq1 -= ((I_x - I_xp) / dt) * ksi1 * dt
-        dI_dq2 -= ((I_x - I_xp) / dt) * ksi2 * dt
-        dI_dq3 -= ((I_x - I_xp) / dt) * ksi3 * dt
+        dI_dq1 -= 2 * error * ksi1 * dt
+        dI_dq2 -= 2 * error * ksi2 * dt
+        dI_dq3 -= 2 * error * ksi3 * dt
         prev_error = error
         if show_delay:
             h_nd[i] = y
@@ -133,7 +132,7 @@ def simulate_system(
             h[i] = buffer[0]
         else:
             h[i] = y
-
+    print(I_x)
     if show:
         plt.plot(
             t,
@@ -210,14 +209,14 @@ def apz_runge_kutta(y, g, T, K, dt):
 # plt.show()
 
 
-q1 = 0
+q1 = 3
 q2 = 0
 q3 = 0
-h = 0.3
+h = 0.1
 prev_I = 0
 I_x = 0
 
-iters = 50
+iters = 23
 A = np.zeros((iters, 3))
 prev_sum = 10000000
 for i in range(0, iters):
@@ -241,9 +240,12 @@ for i in range(0, iters):
     q2 -= h * dI_dq2 / sum_i
     q3 -= h * dI_dq3 / sum_i
     A[i] = [dI_dq1, dI_dq2, dI_dq3]
+    print(I_x)
     print([i, dI_dq1, dI_dq2, dI_dq3, I_x, sum_i])
 print(q1, q2, q3)
-simulate_system(q1=q1, q2=q2, q3=q3, show=True, show_ksi=True)
+simulate_system(
+    q1=q1, q2=q2, q3=q3, show=True, show_ksi=True, show_delay=True, delay=0.1
+)
 plt.plot(range(0, iters), [i[0] for i in A], label="dI_dq1")
 plt.plot(range(0, iters), [i[1] for i in A], label="dI_dq2")
 plt.plot(range(0, iters), [i[2] for i in A], label="dI_dq3")
