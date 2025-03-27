@@ -45,6 +45,9 @@ def simulate_system(
     show_delay=False,
     show_ksi=False,
     calc_dI=False,
+    et_hist=False,
+    ax=None,
+    label=None,
 ):
 
     t = np.arange(0, time_end, dt)
@@ -63,6 +66,7 @@ def simulate_system(
 
     y, z2, I_x = 0, 0, 0
     y_et = 0
+    et_h = []
     prev_error, integral = 0, 0
     delay_steps = int(delay / dt)
     buffer = np.zeros(delay_steps) if delay_steps > 0 else None
@@ -81,6 +85,8 @@ def simulate_system(
         )
         I_x += ((y - y_et) ** 2) * dt
         y_et = apz_runge_kutta(y_et, 1, 1 / 3, 1, dt)
+        if et_hist:
+            et_h.append(y_et)
         y, z2 = runge_kutta_step(y, z2, control_signal, T, eps, dt, k)
         if calc_dI or show_ksi:
             ksi1_i += ksi1 * dt
@@ -170,13 +176,35 @@ def simulate_system(
             plt.plot(t, h_ksi2_nd, label="ksi2 с задержкой")
             plt.plot(t, h_ksi3_nd, label="ksi3 с задержкой")
 
-    if show or show_delay or show_ksi:
+    if ax is not None:
+        if label is not None:
+            ax.plot(t, h, label=label)
+        else:
+            ax.plot(
+                t,
+                h,
+                label=f"q1={q1}, q2={q2}, q3={q3}, T={T}, eps={eps}, delay={delay}",
+            )
+    elif show:
+        if label is not None:
+            plt.plot(t, h, label=label)
+        else:
+            plt.plot(
+                t,
+                h,
+                label=f"q1={q1}, q2={q2}, q3={q3}, T={T}, eps={eps}, delay={delay}",
+            )
+
+    if ax is None and (show or show_delay or show_ksi):
         plt.xlabel("Время (с)")
         plt.ylabel("Выходное значение")
         plt.title("Переходная характеристика системы")
         plt.legend()
         plt.grid()
         plt.show()
+    if et_hist:
+        return et_h
+
     if calc_dI or show_ksi:
         return dI_dq1, dI_dq2, dI_dq3, I_x
     return I_x
@@ -282,26 +310,53 @@ def optimize_sys(
     return q1, q2, q3
 
 
-q1, q2, q3 = optimize_sys(q1=1, q2=0, q3=0)
-simulate_system(
-    q1=1,
-    q2=0,
-    q3=0,
-    show=True,
-    show_ksi=True,
-    show_delay=True,
-    delay=0.1,
-)
+q1, q2, q3 = optimize_sys(q1=1, q2=1, q3=1)
 
-simulate_system(
-    q1=q1,
-    q2=q2,
-    q3=q3,
-    show=True,
-    show_ksi=True,
-    show_delay=True,
-    delay=0.1,
+fig, ax = plt.subplots()
+t = np.arange(0, 20, 0.001)
+et_h = [0] + simulate_system(
+    q1=0, q2=0, q3=0, delay=0.1, ax=ax, label="A", et_hist=True
 )
+simulate_system(q1=1.5, q2=1, q3=1, delay=0.1, label="A1", ax=ax)
+simulate_system(q1=10, q2=10, q3=10, delay=0.1, label="A2", ax=ax)
+simulate_system(q1=q1, q2=q2, q3=q3, delay=0.1, label="Оптимизированная система", ax=ax)
+ax.plot(t, et_h, label="Эталлонное звено")
+ax.set_xlabel("Время (с)")
+ax.set_ylabel("Выходное значение")
+ax.set_title("Начальные и оптимальное положения систем")
+ax.legend()
+ax.grid()
+plt.show()
+
+# A = optimize_sys(I_hist=True, q1=0, q2=0, q3=0)
+# A1 = optimize_sys(I_hist=True, q1=1.5, q2=1, q3=1)
+# A2 = optimize_sys(I_hist=True, q1=10, q2=10, q3=10)
+# # plt.plot(range(0, len(A)), A, label="A(I)")
+# # plt.plot(range(0, len(A1)), A1, label="A1(I)")
+# plt.plot(range(0, len(A2)), A2, label="A2(I)")
+# plt.title("График целевой функции")
+# plt.xlabel("Итерации")
+# plt.ylabel("Выходное значение")
+# plt.legend()
+# plt.grid()
+# plt.show()
+
+
+# q1, q2, q3 = optimize_sys(q1=10, q2=10, q3=10, show_dI=True)
+# simulate_system(
+#     q1=1, q2=0, q3=0, show=True, show_ksi=True, show_delay=True, delay=0.1, time_end=7.5
+# )
+
+# simulate_system(
+#     q1=q1,
+#     q2=q2,
+#     q3=q3,
+#     show=True,
+#     show_ksi=True,
+#     show_delay=True,
+#     delay=0.1,
+#     time_end=7.5,
+# )
 
 # A = optimize_sys(show_dI=True)
 # A1 = optimize_sys(I_arr=True, q1=10, q2=2, q3=2, eps=0.00001)
